@@ -1,0 +1,16 @@
+---
+output: github_document
+---
+
+# SamplEffCalc
+
+The  package **SamplEffCalc** provides functions to:
+- Visualize distributions of continuous and count data.
+- Calculate sample size based on Student-t, Normal, Poisson, Negative Binomial, and Zero-Inflated Poisson distributions.
+
+
+## Instalation
+
+```r
+# Instalation from github
+devtools::install_github("ppoliqueta/SamplEffCalc", build_vignettes = TRUE)
