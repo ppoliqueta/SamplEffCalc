@@ -1,0 +1,418 @@
+---
+title: "SamplEffCalc - Manual"
+author: "Paulo Paiva"
+date: "2025-10-10"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SamplEffCalc  - Manual}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = FALSE,  # Avoid caching issues
+  autodep = TRUE,
+  cache.lazy = FALSE
+)
+```
+
+
+### Introduction
+
+The `SamplEffCalc` package enables students and researchers to determine the sample size required to achieve a specified precision for mean estimation. It is designed for zero or positive data, which commonly arise in ecological, environmental, and biological studies. Typical applications include counts of organisms (e.g., the number of polychaetes per sediment sample, fish abundance in a survey, number of small mammals per trap), density measurements (e.g., individuals per square meter), occurrence data (e.g., presence/absence or proportion of sites with a species), and percentage data (e.g., sediment organic matter, calcium carbonate content, or percent cover of vegetation)
+
+The package is also suitable for a wide range of environmental variables, such as water temperature, salinity, nutrient concentrations, or pollutant levels, provided that the values are non-negative. For example, researchers can use `SamplEffCalc` to determine how many sediment samples are needed to estimate the mean organic matter content in a coastal study area with a target relative or absolute precision. Similarly, it can be applied to assess how many quadrats are required to estimate the average percent cover of a plant species in a restoration site, of living corals in a reef site or to determine the number of water samples needed to reliably estimate mean nitrate concentrations in a river.
+
+By incorporating both parametric and non-parametric approaches, including bootstrap resampling, SamplEffCalc allows users to account for the actual distribution of their data, providing robust and flexible tools for planning field studies and laboratory experiments where precise estimation of mean values is critical.
+
+To determine which method should be used to estimate the minimum sampling effort, plots of continuous distributions (normal, t-Student, gamma, and lognormal) or discrete ones (poisson, negative binomial, and zero-inflated poisson) are provided through the functions `plot_distributionC` and `plot_distributionD`. These functions are primarily useful for initial inspection; for more detailed analysis, we recommend using the **fitdistrplus** package to obtain more comprehensive information about the residuals.
+
+Regarding sample size functions such as `relative_sample`, `absolute_sample`,  `sample_size_binomial`and `sample_size_beta`, these provide the required sampling effort based on the probability distribution that best fits the provided pilot data. Because these data typically come from preliminary studies, it is crucial to ensure that the pilot samples are representative of the population parameters from which they were drawn. Small or unrepresentative pilot samples may lead to inaccurate or misleading sample size estimates. For example, if pilot study samples are well described by a Poisson distribution, it is reasonable to assume that the underlying population also follows a Poisson distribution, allowing the parametric methods to produce reliable estimates.
+
+In addition to parametric methods based on known distributions, the package provides a non-parametric approach through the `bootstrap_precision` function. This function uses a bootstrap procedure to estimate the minimum sample size required to achieve a desired precision without assuming any particular underlying distribution. However, this method relies on the assumption that the pilot samples are good estimators of the true population. Additionally, bootstrap_precision cannot extrapolate beyond the size of the pilot study, which limits its applicability for very large required sample sizes.
+
+Because many ecological and environmental studies sample a substantial fraction of the population, the package also incorporates finite population corrections. These are implemented within the sample size functions when a finite population size is specified, and there is a separate function, `finite_population_correction`, for explicitly calculating the adjusted sample size. This ensures that variance estimates and sample sizes are not overestimated when a large proportion of the population is sampled.
+
+\
+
+### Data
+
+In order to demonstrate the functions we provided tree datasets: `picinguaba`, `ubatuba` and `sargassum`. The `picinguaba` dataset is the count of four benthic species in 180 samples (Paiva, 2001), while `ubatuba` encompass 54 shelf samples with counts of polychaete species and environmental data (temperatura, salinity and sediment variables) (Paiva, 1993). Dataset `sargassum` provide percentage of cover of *Sargassum* spp. in rocky bottoms of several islands, as well presence/absence data of *Sargassum spp.* in two of them (Carneiro et al. 2019). More details from each dataset are provided using help (e.g. `?picinguaba'`)
+
+Now, let's see how each function works:
+
+\
+
+### Vizualizing Distributions (plots)
+
+As previously mentioned, the functions `plot_distributionC` and `plot_distributionD` visualize the observed data alongside fitted distributions, allowing users to assess which theoretical distributions provide the best fit. The only required input for these functions is a vector of counts per sample or continuous measurements. These functions automatically fit multiple candidate distributions, such as **Poisson**, **negative binomial**, **normal**,**t-distribution**, **gamma** or **lognormal**, and generate plots that overlay the observed frequency or density with the expected values from each fitted distribution.
+
+In the example below, counts of the marine polychaete *Lumbrineris curtolobata* from 180 sediment samples were analyzed to identify the distributions that best describe the observed variability. Such visual diagnostics are useful not only for understanding data patterns but also for guiding subsequent sample size calculations, as selecting an appropriate distribution is critical when using parametric sample size functions like `relative_sample` or `absolute_sample`.
+
+```{r example_discrete, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.heigth=4}
+library(SamplEffCalc)
+data(picinguaba)
+lumb<-picinguaba$Lumbrineris
+plot_distributionsD(lumb)
+```
+
+We can observe that the *negative binomial* distribution appears to be the best fit to the data and hence, the best estimates of the population distribution. Therefore, when applying the sample size functions below, we would likely consider the negative binomial distribution for survey planning. 
+As regards `plot_distributionC` it works in the same way for continuous data, such as: biomass, density, etc... of organims but also environmental data, interpretation is similar. Let's see what is the best distribution of sea-water temperatures in the coast of Ubatuba:
+
+```{r example_continuous, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, heigth=4}
+data(ubatuba)
+temp<-ubatuba$temp
+plot_distributionsC(temp)
+```
+
+The best fitted distribution (or least worst) is the normal one, but not quite different from others. Probably, a non-parametric approach should be used for sample size analysis, as we will see later.
+
+\
+
+### Sample Size Analysis
+
+For sample size analysis we should first distinguish to different approaches: (1) desired **relative** precision for mean estimates, or (2) desired **absolute** precision for mean estimates. I the first case, as in `relative_sample` and `relative_sample_zip` functions the precision provide is a percentage of the mean. For instance, considering that the mean of a sample is 10, a required **relative precision** of 0.2 (20%) will calculate the mean with a confidence interval between 8 and 12 ($10\pm 2$) since 20% of 10 is 2. While  **absolute precision** is a fixed value. For instance if the mean number of barnacles in a sample in a rocky shore is 8, and you want a absolute precision of 1 the precision will be $8\pm 1$ (7 to 9), while if the mean is 20, it will be $20\pm 1$ (19 to 21). Relative precision changes with the mean, while absolute is fixed. What kind of precision do I need? That is a good question and depends a lot on your main question or problem. For instance, relative precision is more used in ecological surveys when there is no good guess of the size-effect. While when size-effects are know, for example, a reduction in the number of nests in a bird colony of 2 nests per hectare is considered a milestone for bird population viability. Thus absolute precision is a best choice for this study. 
+
+\
+
+### Relative and Absolute Sample Size for Continuous and Discrete Data
+The functions `relative_sample`, `relative_sample_zip` and  `absolute_sample` calculate the minimum number of samples required to achieve a specified precision. These functions are similar, with the main difference being the parameter epsilon for absolute precision or epsilon_rel for relative precision. The mathematical foundations of these functions are derived from confidence interval calculations for each distribution. The parameters for each distribution type are provided below. For normal, lognormal and Poisson, mean and variance/standard deviation were calculated using the method of moments, while for other distributions, a maximum-likelihood approach was used to estimate parameters using the **MASS** package.
+
+\
+
+#### Relative precision
+| Distribution Type | Sample Size Equation | Parameters |
+|:-------------------|:----------------------|:-----------------|
+| Normal | $n_0 = \left(\dfrac{z \cdot \sigma}{\varepsilon_{\text{rel}} \cdot \mu}\right)^2$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\sigma$ = standard deviation<br>$\mu$ = mean<br>$\varepsilon_{\text{rel}}$ = relative precision<br> |
+| Student-t | $n_0 = \left(\dfrac{t \cdot \sigma}{\varepsilon_{\text{rel}} \cdot \mu}\right)^2$ | $n_0$ = initial sample size<br>$t$ = t-value for confidence level<br>$\sigma$ = standard deviation<br>$\mu$ = mean<br>$\varepsilon_{\text{rel}}$ = relative precision<br> |
+| Poisson | $n_0 = \dfrac{z^2}{\varepsilon_{\text{rel}}^2 \cdot \lambda}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\lambda$ = Poisson rate parameter<br>$\varepsilon_{\text{rel}}$ = relative precision<br> |
+| Negative Binomial | $n_0 = \dfrac{z^2 \cdot \left(\mu + \frac{\mu^2}{\theta}\right)}{\varepsilon_{\text{rel}}^2 \cdot \mu^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\mu$ = mean<br>$\theta$ = dispersion parameter<br>$\varepsilon_{\text{rel}}$ = relative precision<br> |
+| Zero-Inflated Poisson (ZIP) | $n_0 = \dfrac{z^2 \cdot \text{Var}(Y)}{\varepsilon_{\text{rel}}^2 \cdot \mu_m^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\text{Var}(Y)$ = variance of ZIP distribution<br>$\mu_m$ = marginal mean $(1-\pi)\mu$<br>$\pi$ = zero-inflation probability<br>$\mu$ = Poisson mean<br>$\varepsilon_{\text{rel}}$ = relative precision<br> |
+| Gamma | $n_0 = \dfrac{z^2 \cdot \frac{\alpha}{\beta^2}}{(\varepsilon \cdot \mu)^2}$ where $\mu = \frac{\alpha}{\beta}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\alpha$ = shape parameter<br>$\beta$ = rate parameter<br>$\mu$ = mean ($\alpha/\beta$)<br>$\varepsilon$ = relative precision<br> |
+| Lognormal | $n_0 = \dfrac{z^2 \cdot \left[(\exp(\sigma_{\text{log}}^2) - 1) \cdot \exp(2\mu_{\text{log}} + \sigma_{\text{log}}^2)\right]}{(\varepsilon \cdot \mu)^2}$ where $\mu = \exp(\mu_{\text{log}} + 0.5\sigma_{\text{log}}^2)$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\mu_{\text{log}}$ = mean of log-transformed data<br>$\sigma_{\text{log}}$ = SD of log-transformed data<br>$\mu$ = mean of original data<br>$\varepsilon$ = relative precision<br> |
+
+**Note:** For all distributions, when a finite population size $N$ is provided, the finite population correction is applied as:
+
+$$n_{\text{adj}} = \frac{n_0}{1 + \frac{n_0 - 1}{N}}$$ 
+<center> where $N$ = finite population size and $n_{\text{adj}}$ = finite population correction </center>
+
+\
+
+#### Absolute precision
+
+| Distribution Type | Sample Size Equation | Parameters |
+|:-------------------|:----------------------|:-----------------|
+| Normal | $n_0 = \left(\dfrac{z \cdot \sigma}{\varepsilon}\right)^2$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\sigma$ = standard deviation<br>$\varepsilon$ = absolute precision<br> |
+| Student-t | $n_0 = \left(\dfrac{t \cdot \sigma}{\varepsilon}\right)^2$ | $n_0$ = initial sample size<br>$t$ = t-value for confidence level<br>$\sigma$ = standard deviation<br>$\varepsilon$ = absolute precision<br> |
+| Poisson | $n_0 = \dfrac{\lambda}{\varepsilon^2}$ | $n_0$ = initial sample size<br>$\lambda$ = Poisson rate parameter<br>$\varepsilon$ = absolute precision<br> |
+| Negative Binomial | $n_0 = \dfrac{z^2 \cdot \left(\mu + \frac{\mu^2}{\theta}\right)}{\varepsilon^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\mu$ = mean<br>$\theta$ = dispersion parameter<br>$\varepsilon$ = absolute precision<br>|
+| Gamma | $n_0 = \dfrac{z^2 \cdot \frac{\alpha}{\beta^2}}{\varepsilon^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\alpha$ = shape parameter<br>$\beta$ = rate parameter<br>$\varepsilon$ = absolute precision<br> |
+| Lognormal | $n_0 = \dfrac{z^2 \cdot \left[(\exp(\sigma_{\text{log}}^2) - 1) \cdot \exp(2\mu_{\text{log}} + \sigma_{\text{log}}^2)\right]}{\varepsilon^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\mu_{\text{log}}$ = mean of log-transformed data<br>$\sigma_{\text{log}}$ = SD of log-transformed data<br>$\varepsilon$ = absolute precision<br>|
+
+**Note:** For all distributions, when a finite population size $N$ is provided, the finite population correction is applied as:
+
+$$n_{\text{adj}} = \frac{n_0}{1 + \frac{n_0 - 1}{N}}$$ 
+<center> where $N$ = finite population size<br>$n_{\text{adj}}$ = finite population correction </center>
+\
+
+### Applying the functions
+### Relative sample
+The `relative_sample` parameters are:  **y** = data.vector, **epsilon_rel** desired level of precision (example: 0.2 = 20%), **conf** = level of confidence *(default = 0.95)*, **Discrete** = if is a discrete or a continuous distribution *(default = TRUE)* TRUE and **N** = population size *(default=NULL)*, thus if not provided it means that population is infinite.
+
+What is the sample size for estimate the mean of the polychaete *Lumbrineris curtolobata* in shallow waters of Picinguaba with a precision of at least 20%:
+
+```{r example_relative, warning=FALSE}
+relative_sample(picinguaba$Lumbrineris, 0.2, Discrete = TRUE)
+```
+
+As demonstrated above, the *L. curtolobata* data followed a negative binomial distribution, indicating that a sampling effort of n0 = 246 would be required to achieve the desired precision.
+
+But consider that the shallow area is very restricted, thus the population is finite with only 300 possible sampling units covering the entire area. In this case, we would include the finite population size as shown below:
+
+What is the sample size for the same species and precision but considering a finite population of N=300: 
+
+```{r}
+relative_sample(picinguaba$Lumbrineris, epsilon_rel = 0.2, Discrete = TRUE, N=300)
+```
+
+As can be observed, with such a restricted population, the sampling effort can be reduced to 136 (n_adj) for the same negative binomial distribution.
+
+The `relative_sample_zip` function extends the `relative_sample` function for discrete data by incorporating zero-inflated Poisson distributions. This approach should be used when there is a clear structural excess of zeros in the data, such as when samples are taken from areas where the species cannot occur due to environmental constraints or habitat limitations. However, this method should be applied with caution. The zero-inflated model is appropriate when the excess zeros represent a genuine biological phenomenon (e.g., true absence due to unsuitable habitat) rather than sampling errors. In cases where no underlying hypothesis explains the excess zeros, the negative binomial distribution often adequately accounts for zero inflation without requiring a specialized zero-inflated model.
+\
+
+### Absolute sample
+The `absolute_sample` parameters are:  **y** = data.vector, **epsilon** desired level of precision (exemple 2, meaning $mean \pm 2$ plus or less than the mean), **conf** = level of confidence *(default = 0.95)*, **Discrete** = if is a discrete or a continuous distribution *(default = TRUE)* TRUE and **N** = population size *(default=NULL)*, thus if not provided it means that population is infinite.
+
+What is the sample size to assess the mean number of species (S) in ubatuba with an error (precision) of only 2 species: 
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.heigth=4}
+plot_distributionsD(ubatuba$S)
+absolute_sample(ubatuba$S, epsilon = 2) ## Discrete 
+```
+
+Since the normal distribution provided a good fit for the richness data (Smean = 18) based on the plot_distributionD output, we can conclude that 62 samples would be sufficient to estimate richness with a precision of $18 \pm 2$, corresponding to a confidence interval of [16, 20]. As in the relative_sample function described above, corrections for finite populations are also available. For instance, on Brandão Island, the density of *Sargassum* spp. is estimated using several quadrats placed on a rocky bottom. Suppose that the total number of quadrats that can be sampled is limited to a maximum of 400, corresponding to the entire rocky area likely to be surveyed. In this case, we will calculate the minimum sampling effort considering a finite population (i.e., the maximum number of quadrats).
+
+First we will see which distribution fits better to the data using the function `plot_distributionsD`
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.heigth=4}
+data(sargassum)
+plot_distributionsD(sargassum$Bra_Density) # plot of distribution fit of the data
+```
+
+It seems that the Negative Binomial distribution provides the best fit. You can test this by fitting, for instance, both a Negative Binomial and a Normal distribution using the `fitdistr` function of the  **MASS** package, and then comparing their AIC (Akaike Information Criterion) values. The results indicate that the Negative Binomial distribution, having the lower AIC, is indeed the best fit, as already suggested by the plot. 
+
+```{r warning=FALSE}
+data(sargassum)
+Bra_NB<-MASS::fitdistr(sargassum$Bra_Density, "Negative Binomial") # fit of the negative binomial distribution)
+Bra_Norm<-MASS::fitdistr(sargassum$Bra_Density, "Normal") # fit of the normal distribution)
+AIC(Bra_NB, Bra_Norm) # AIC test
+```
+
+Thus, what is the required sample size to assess the mean number of *Sargassum* spp. in Brandão Island with an error (precision) of only one species:
+
+```{r warning=FALSE}
+data(sargassum)
+absolute_sample(sargassum$Bra_Density, epsilon = 1, N=400) 
+```
+
+Notice that the number of samples (in the NegBinom distribution - see plot) in the finite population is around half of the total possible (218 on 400 possible), while if you are thinking of an infinite rocky shores, including other rocky habitats in the other side of the island you would need 475 samples. 
+\
+
+### Binomial and Beta sampling size
+Now we move to cases where the data are neither counts nor continuous, but expressed as percentages or occurrence data (presence/absence data). These types of data have their own typical distributions: **beta distribution** for percentages (e.g., 0.32, 0.01, but always >0 and <1) and **binomial distribution** for presence/absence data (0 or 1), where presence = 1 and absence = 0. For the beta distribution, values of 0 and 1 are not acceptable. However, the function includes the transformation of Smithson & Verkuilen (2006), which allows the use of the beta distribution with 0/1 values: $$x = (x * (n - 1) + 0.5) / n$$ Examples of beta-distributed data include the *content of fine sand*in the sediment (see variable **fs** in the Ubatuba dataset) and **Buz_Cover**, which represents the percentage of canopy cover of *Sargassum* spp.on Búzios Island in the `sargassum` dataset.
+
+Both functions use, by default, absolute precision. This is because the mean is already expressed as percent/proportion — i.e., mean percentage in the **beta** case, and mean probability (p) of occurrence in the **binomial** case. It is therefore more plausible to express the results as a range of probabilities or percentages than to calculate a percentage of a percentage. For instance, in a political poll, when it is reported that candidate X has 20% of the intended votes, the margin of error is typically 2%. This means the range is 2% more or less than the mean, i.e., [18%, 22%]. If relative precision is desired, one can change the default using the argument relative = TRUE.
+
+The functions for such analysis are `sample_size_binomial` and `sample_size_beta`. Both estimate the required sample size based on the variance associated with their respective distributions. The confidence interval used to assess precision is symmetric, similar to that employed for the normal and t-distributions.
+The symmetric confidence interval is calculated as:
+
+$$CI = (\mu - E_{\text{abs}}, \ \mu + E_{\text{abs}})$$
+The main advantage of this symmetric interval approach lies in its simplicity and ease of interpretation. However, it may yield confidence limits that extend beyond the [0, 1] range when proportions are near the boundaries (i.e., close to 0 or 1).
+
+\
+
+| Distribution Type | Sample Size Equation | Parameters |
+|:-------------------|:----------------------|:------------|
+| Beta | $n_0 = \dfrac{z^2 \cdot \text{Var}(Y)}{\varepsilon^2}$<br>where $\text{Var}(Y) = \dfrac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$\alpha$ = alpha shape parameter<br>$\beta$ = beta shape parameter<br>$\text{Var}(Y)$ = variance of beta distribution<br>$\varepsilon$ = absolute precision<br>|
+| Binomial | $n_0 = \dfrac{z^2 \cdot p(1-p)}{\varepsilon^2}$ | $n_0$ = initial sample size<br>$z$ = z-score for confidence level<br>$p$ = proportion/probability of success<br>$\varepsilon$ = absolute precision<br>|
+
+**Note:** For all distributions, when a finite population size $N$ is provided, the finite population correction is applied as:
+
+$$n_{\text{adj}} = \frac{n_0}{1 + \frac{n_0 - 1}{N}}$$ 
+<center> where $N$ = finite population size and $n_{\text{adj}}$ = finite population correction </center>
+\
+
+#### Sampling beta data
+In most practical cases, `sample_size_beta` produces sample size estimates similar to those obtained under the normal approximation (see the absolute_sample function). Nonetheless, the beta distribution tends to provide more accurate and realistic estimates when the true proportions are close to the limits of the parameter space (e.g., 0.02, 0.05, 0.89, 0.98). Conversely, when proportions are moderate (around 0.3–0.7), the difference between the two approaches is usually negligible.
+
+Therefore, the `sample_size_beta` function is mainly provided as a complementary option. While the resulting sample size estimates (n0 or n_adj) are useful, the corresponding symmetric confidence intervals should be interpreted with caution, as they can become unreliable or meaningless when extending beyond the valid [0, 1] range. 
+
+What is the sample size for estimate the mean percentage of *Sargassum* canopy cover in Cobras Island? 
+```{r warning=FALSE}
+sample_size_beta (sargassum$Cob_Cover, epsilon=0.1)
+```
+
+Only five samples would be required to estimate the coverage with an absolute error of 5%. However, since the mean value (0.058) is close to the lower boundary (0), the symmetric confidence interval produces negative estimates, as noted above. The function can also be applied to simulations when the parameters of the function, *alpha* and *beta*, are known. In this case, no data should be provided.
+
+```{r warning=FALSE}
+sample_size_beta(alpha=3, beta=2, epsilon=0.1)
+```
+Thus for a beta distribution with alpha=3 and beta=2 the mean is 0.6 and the required sample size for an absooute precision of 0.1 is 16. 
+
+\
+
+#### Sampling binomial data
+
+While binomial data can be approximated by a normal distribution when the sample size is large and the probability of success *p* (percentage of occurrences) is  close to the boundaries, it is more appropriate to apply the `sample_size_binomial` function, particularly when *p* is near 0 or 1. This occurs when working with, for instance, species with rare occurrences (*p* very low) or very abundant ones (*p* very high). In such cases, `sample_size_binomial` is recommended. However, since it uses a symmetric confidence interval based on the normal approximation, it may produce intervals with negative values or values exceeding 1 (outside the [0,1] boundaries), which are theoretically impossible for probabilities. Despite this limitation, the calculated sample size remains useful for study planning.
+
+What is the sample size for estimate the frequency of occurrence of *Sargassum* spp. in the rock bottons of Itanhangá Island with an absolute precision of at least 10%? Fot that we are using the **Ita_PA** data of presence/absence(1/0):
+
+```{r warning=FALSE}
+sample_size_binomial(sargassum$Ita_PA, epsilon=0.1)
+```
+
+**Note**: you should write the argument `epsylon=0.1` instead of only `0.1` as was done above with `absolute_sample`. This because the functions `sample_size_binomial` and `sample_size_beta` include optional arguments; therefore, if you do not specify the argument name, the function will not know which parameter 0.1 refers to.
+
+The results indicate a sample size of 85 sampling units for a precision of 0.1. In this case, since the observed proportion is far from the boundaries of the distribution [0, 1], the confidence interval is more reliable. As noted above, with this observed proportion, and despite the binomial nature of the data, the use of `absolute_sample`, which applies a normal approximation, provides similar (in this case, identical) results.
+
+```{r warning=FALSE, message=FALSE, fig.width=7, fig.heigth=4}
+absolute_sample(sargassum$Ita_PA, epsilon=0.1)
+```
+
+But suppose you do not have pilot sample data available to calculate the sampling effort. In this case, the function is particularly useful because you can provide an expected proportion based on prior knowledge or an informed guess.
+For example, imagine you are studying an isopod that parasitizes the branchial chambers of crabs. To compare the prevalence rate (i.e., the proportion of infested crabs) between two regions, the researcher needs to determine how many crabs must be sampled to estimate the proportion of infestations with a precision of 5%.
+
+Instead of having individual observations of infestation such as (0, 1, 0, 0, 0, 1, ...), the researcher may only know the total percentage or have an approximate value from previous work indicating that the mean prevalence is about 20%. In this case, you only need to provide the arguments epsilon` and `p`, without supplying any data.
+
+```{r warning=FALSE}
+sample_size_binomial (p=0.2, epsilon=0.05)
+```
+
+But suppose the researcher does not have any guess of the infestation prevalence, as she is working with a new parasite and is planning a new project with only a single preliminary observation. The only information she has is the desired absolute precision (e.g., 0.04 or 4%), and she wants to know how many samples are necessary to achieve this. In such situations, it is still possible to calculate the sample size using what is called the **worst-case scenario** for the binomial distribution: the probability `p` that has the largest variation and thus requires the most sampling effort to reduce the confidence interval. This scenario is `p =q= 0.5`. Therefore, even without further information, she can determine an adequate sample size for a 4% precision.
+
+```{r warning=FALSE}
+sample_size_binomial (p=0.5, epsilon=0.04)
+```
+
+\
+
+#### Bootstrap Precision Sample Size Method
+
+The bootstrap_precision function determines the required sample size to achieve a specified relative precision using bootstrap resampling. Unlike the parametric methods used in other functions (e.g., `relative_sample()` and `absolute_sample()`), this approach makes no assumptions about the underlying distribution. However, it cannot be used for extrapolation beyond the pilot sample size. For example, you are studying ants in litter in a forest. Your sample unit is quadrats of one square meters and you want to calculate the mean number of ants per square meters in the forest with a desired precision. For such purpose you conducted a pilot survey of 30 sampled units. Thus your precision can only be calculated for sample sizes up to 30. This method is particularly useful for sampling designs that involve additional sampling at different locations or over time, based on an extensive pilot study. It accepts both **relative precision** and **absolute precision** with the arguments `epsilon_rel` or `epsilon` we saw already in the parametric function above.
+
+In the  example we will use the same data that we used for calculating `relative_sample` in the example above to compare both methods:
+
+```{r}
+bootstrap_precision(picinguaba$Lumbrineris, epsilon_rel = 0.2)
+```
+  
+
+The output provides not only the required minimum sample size but also the estimated mean and confidence interval.
+Notice that the **non-parametric** `bootstrap_precision` indicated a minimum number of samples of 141, which is similar to the result of the parametric function `relative_sample` (see above) for the normal distribution `(n0 = 152)`, but much lower than for the Negative Binomial `(n0 = 246)`.
+
+Nevertheless, the bootstrap_precision function has some advantages since it is non-parametric, making no assumptions about the underlying distribution. Furthermore, it uses the actual data characteristics, whereas parametric methods fit a distribution to the data and perform all calculations based on the fitted model rather than the observed data.
+
+A more detailed explanation and the mathematical formulation are provided below.
+
+⸻
+\
+
+##### Method Overview
+
+Suppose you sample 30 units, counting ants in each sample, and you want to determine how many units are needed to estimate mean ant density in a similar site or future survey. The function operates as follows:
+
+1. **Single-unit bootstrap**: Perform bootstrap resampling by randomly selecting individual units with replacement (1000 iterations). This generates 1000 bootstrap samples, each containing one unit.
+
+2. **Confidence interval calculation**: Calculate the mean and determine the range between the 2.5 and 97.5 percentiles, which represents the 95% confidence interval of the bootstrap distribution.
+
+3. **Progressive sampling**: Repeat this process for increasingly larger sample sizes - bootstrap 1000 samples of two units, then three units, and so on up to the full pilot sample size of 30 units.
+
+As shown in the resulting plots, the confidence interval width decreases as sample size increases. The function identifies the smallest sample size $n_0$ that achieves the desired relative precision. For instance, if the mean number of ants per unit is 10 and the desired precision is 20% ($\epsilon = 0.2$), the function selects the sample size where the confidence interval falls within 8 to 12 ($\pm 2$ around the mean). If the desired precision requires a narrower confidence interval than achieved with the full pilot sample ($N = 30$), the function issues a warning indicating that the required precision was not attained.
+
+⸻
+\
+
+##### Mathematical Formulation
+
+
+1. **Bootstrap Resampling**:
+   For each candidate sample size \(n\), bootstrap resamples are drawn **with replacement** from the pilot data:
+  
+$$
+  \bar{X}_b = \frac{1}{n} \sum_{i=1}^n X_{b,i} \quad \text{for } b = 1, 2, \ldots, B
+$$
+  
+<center>where \(X_{b,i}\) are bootstrap samples and \(B\) is the number of bootstrap replicates. </center>
+
+\
+
+2. **Confidence Interval Calculation**:
+The confidence interval (CI) for each \(n\) is computed from the quantiles of the bootstrap means:
+  
+$$
+  \begin{aligned}
+\text{CI}_{\text{lower}} &= Q_{\alpha/2}(\{\bar{X}_b\}_{b=1}^B) \\
+\text{CI}_{\text{upper}} &= Q_{1-\alpha/2}(\{\bar{X}_b\}_{b=1}^B)
+\end{aligned}
+$$
+  
+ <center> where \(Q_p\) is the \(p\)-th quantile and \(\alpha = 1 - \text{conf}\).</center>
+
+\
+
+3. **Precision Calculation**:
+Precision can be **relative** or **absolute**:
+  
+  - **Relative Precision**:
+  
+$$
+  \text{Precision}_{\text{rel}}(n) = \frac{\text{CI}_{\text{upper}} - \text{CI}_{\text{lower}}}{2 \cdot |\bar{\bar{X}}|}
+$$
+\
+
+  - **Absolute Precision**:
+  
+$$
+  \text{Precision}_{\text{abs}}(n) = \frac{\text{CI}_{\text{upper}} - \text{CI}_{\text{lower}}}{2}
+$$
+  
+<center>where \(\bar{\bar{X}}\) is the mean of the bootstrap means.</center>  
+<center>The function chooses the first \(n\) such that the desired precision target (\(\varepsilon_{\text{rel}}\) or \(\varepsilon_{\text{abs}}\)) is achieved.</center>
+
+\
+
+4. **Sample Size Determination**, the **required sample size** \(n_0\) is:
+  
+$$
+  n_0 = \min \{ n \in [1, N] : \text{Precision}(n) < \varepsilon \}
+$$
+  
+  <center>If a **finite population** of size \(N_{\text{pop}}\) is provided, the **adjusted sample size** is:</center>
+  
+$$
+  n_{\text{adj}} = \frac{n_0}{1 + \frac{n_0 - 1}{N_{\text{pop}}}}
+$$
+ 
+  ⸻
+\
+
+##### Parameters
+
+| Symbol | Description |
+  |:--------|:-------------|
+  | `y` | Pilot sample data vector |
+  | `epsilon_rel` | Target relative precision (optional if `epsilon_abs` provided) |
+  | `epsilon` | Target absolute precision (optional if `epsilon_rel` provided) |
+  | `n_boot` | Number of bootstrap replicates (default: 1000) |
+  | `conf` | Confidence level (default: 0.95) |
+  | `N_pop` | Finite population size (optional) |
+  | `alpha` | Significance level (\(\alpha = 1 - \text{conf}\)) |
+
+⸻
+\
+
+##### Output
+  The function returns:
+
+- **Required sample size** \(n_0\) (infinite population)
+- **Adjusted sample size** \(n_{\text{adj}}\) (finite population, if `N_pop` provided)
+- **Bootstrap diagnostics**: achieved precision, mean, confidence intervals, and CI width
+- **Graphical summaries**:
+- Bootstrap mean ± CI vs sample size
+- Precision (relative or absolute) vs sample size
+
+\
+
+
+#### Finite Population Correction
+
+The functions `absolute_sample`, `relative_sample`, `relative_sample_zip` and `bootstrap_precision` all provided corrections for finite populations sizes with optional argument `N` (or `N_pop` in `bootstrap_precision`), Nevertheless, the function for calculation (Cochran, 1977) afterwards is also provided here if necessary. 
+
+If population size $N_{\text{pop}}$ is provided:
+$$
+n_{\text{adj}} = \frac{n_0}{1 + \frac{n_0 - 1}{N_{\text{pop}}}}
+$$
+
+Thus, the function `finite_population_correction` require only two arguments: `n0` = number of sample size when population is cosidered infinte and `N` = size of the finite population, the number os samples that will "cover" all the population in the survey. 
+
+```{r finite_exemple, echo=TRUE, warning=FALSE, message=FALSE}
+
+n0 <- 50   # sample size from relative/absolute precision
+N  <- 200  # total population size
+
+finite_population_correction(n0, N)
+```
+
+
+`SamplEffCalc` was developed with the goal of providing a robust and reliable tool for students or professionals who depend on precise and repetitive calculations in their daily work. Through its intuitive interface and functionalities, it is expected that users will be able to perform their tasks with greater speed and a lower margin of error. I hope your experience with `SamplEffCalc` is productive and that this tool contributes to the success of your study and research projects.
+
+### References
+
+1. Carneiro, I.M., Paiva, P.C., Bertocci, I. & Széchy, M.T.M. (2020). Reconciling vertical and horizontal variability in Sargassum populations for improved environmental monitoring. *Journal of Applied Phycology*, 32:717–728. https://doi.org/10.1007/s10811-019-01882-x
+2. Cochran, W. G. (1977). *Sampling Techniques* (3rd ed.). New York: John Wiley & Sons.
+3. Elliot, J.M. (1977). *Some Methods for the Statistical Analysis of Samples of Benthic Invertebrates*. 2nd Edition, Freshwater Biological Publ. 25, Freshwater Biological Association.
+4. Paiva, P.C. (1993). Anelídeos poliquetos da plataforma continental norte do Estado de São Paulo: I. Padrões de densidade e diversidade específica. *Boletim do Instituto Oceanográfico*, São Paulo, 41(1/2): 69–80.
+5. Paiva, P.C. (2001). Spatial and Temporal Variation of a Nearshore Benthic Community in Southern Brazil: Implications for the Design of Monitoring Programs. *Estuarine, Coastal and Shelf Science*, 52(4):423–433. https://doi.org/10.1006/ecss.2001.0763
+6. Thompson, S. K. (2012). *Sampling* (3rd ed.). Wiley Series in Probability and Statistics, 755. Hoboken, NJ: John Wiley & Sons.

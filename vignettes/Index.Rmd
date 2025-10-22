@@ -1,0 +1,29 @@
+---
+title: "SamplEffCalc Vignettes"
+author: "Paulo Paiva"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SamplEffCalc Vignettes}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = FALSE,  # Avoid caching issues
+  autodep = TRUE,
+  cache.lazy = FALSE
+)
+```
+
+# SamplEffCalc Vignettes
+
+This page provides quick access to all main vignettes in the **SamplEffCalc** package:
+
+- [Introduction to SamplEffCalc](GettingStarted.html)
+- [PrecisionCalc User Manual](Manual.html)
+
+
+Click any link to view the corresponding vignette.

@@ -1,0 +1,234 @@
+---
+title: "SamplEffCalc: Sample Size and Distribution Analysis"
+author: "Paulo Paiva"
+date: "2025-09-28"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SamplEffCalc: Sample Size and Distribution Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = FALSE,  # Avoid caching issues
+  autodep = TRUE,
+  cache.lazy = FALSE
+)
+```
+
+# Introduction
+
+The **`SamplEffCalc`** package provides tools to compute required sample sizes for various distributions, evaluate absolute or relative precision, and visualize observed data with fitted distributions.
+
+This vignette demonstrates all functions included in the package.
+
+## 1. Visualizing Discrete Distributions
+
+The function `plot_distributionsD()` plots a histogram of observed count data and overlays:
+
+- Poisson  
+- Negative Binomial  
+- Zero-Inflated Poisson (ZIP)  
+- Normal distributions  
+
+```{r example_discrete, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, heigth=4}
+library(SamplEffCalc)
+
+# Simulated discrete data
+ y_counts <- c(rpois(100, 3), rep(0,20))
+
+# Plot histogram with fitted distributions
+plot_distributionsD(y_counts)
+```
+
+## 2. Visualizing Continuous Distributions
+
+`plot_distributionsC()` plots a histogram of continuous data and overlays:
+
+-	Normal
+- Student-t
+- Gamma (MLE)
+- Lognormal (MLE)
+
+```{r example_continuos, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, heigth=4}
+y_cont <- rgamma(100, shape = 2, rate = 0.5)
+# Plot histogram with fitted distributions
+plot_distributionsC(y_cont)
+```
+
+## 3. Sample Size for Relative Precision
+
+`relative_sample()` computes the sample size required to achieve a relative error (epsilon_rel) for discrete or continuous distributions.
+
+```{r example_relative_sample, echo=TRUE, warning=FALSE, message=FALSE}
+# Discrete data
+relative_sample(y_counts, epsilon_rel = 0.1, Discrete = TRUE)
+
+# Continuous data
+relative_sample(y_cont, epsilon_rel = 0.1, Discrete = FALSE)
+
+# Continuos data: ample size of a finite population (N_pop=300)
+relative_sample(y_cont, epsilon_rel = 0.1, Discrete = FALSE, N=300)
+```
+
+## 4. Relative Sample Size with Zero-Inflated Poisson
+
+`relative_sample_zip()` computes sample size considering a ZIP distribution.
+
+```{r zip_example, echo=TRUE, warning=FALSE, message=FALSE}
+# Add some extra zeros
+y_counts_zip <- y_counts
+ycounts_zip<-c(y_counts, rep(0,20))
+
+relative_sample_zip(y_counts_zip, epsilon_rel = 0.1)
+```
+
+## 5. Sample Size for Absolute Precision
+
+`absolute_sample()` computes sample size for a given absolute error.
+
+```{r absolute_sample_example, echo=TRUE, warning=FALSE, message=FALSE}
+absolute_sample(y_counts, epsilon = 2, Discrete = TRUE)
+absolute_sample(y_cont, epsilon = 2, Discrete = FALSE)
+
+#Sample size of a finite population (N_pop=300)
+absolute_sample(y_cont, epsilon = 2, Discrete = FALSE, N=300)
+```
+
+
+## 6. Bootstrap-based Relative Precision
+
+`bootstrap_precision()` uses bootstrap to estimate the sampling distribution, compute confidence intervals, and track relative precision across increasing sample sizes. It calculates the precision for both an infinite population size or from a complete sample (finite population size).
+
+```{r bootstrap_example, echo=TRUE, warning=FALSE, message=FALSE}
+set.seed(123)
+# Sample size achieving desired relative precision with CI
+bootstrap_precision(y_counts, epsilon_rel = 0.2, n_boot = 200)
+
+# Sample size achieving desired absolute precision with CI
+bootstrap_precision(y_counts, epsilon = 1, n_boot = 200)
+
+#Sample size of a finite population (N_pop=300)
+bootstrap_precision(y_counts, epsilon_rel = 0.2, n_boot = 200, N_pop=300)
+
+```
+
+## 7. Sample Size for Binomial Proportion
+
+`sample_size_binomial()` computes the required sample size to estimate a proportion in a binomial distribution for a given absolute error and confidence level. Since the input data are expressed as percentages, the desired absolute error should also be provided as a percentage.
+If **p** is not provided it calculates based on the data. **N** is provided only if all population was sampled.  (see also *Finite Population Correction*).
+
+```{r binomial_exemple, echo=TRUE, warning=FALSE, message=FALSE}
+y_bin<-c(0,0,0,1,0,1,0,0,0,1,0,0,1,1)
+sample_size_binomial (y_bin, p = NULL, epsilon=0.02, conf = 0.95, N = NULL)
+```
+
+## 8. Sample Size for Beta Distribution
+
+`sample_size_beta()` computes the required sample size to estimate the mean of a Beta distribution for a given absolute error and confidence level.  
+If the input data contain 0 or 1 values, the function automatically applies the Smithson & Verkuilen (2006) transformation to avoid issues with the Beta distribution.
+
+```{r beta_example, echo=TRUE, warning=FALSE, message=FALSE}
+# Example with observed data including 0s
+y_beta <- c(0.2, 0.1, 0, 0, 0, 0.4)
+sample_size_beta(x = y_beta, epsilon = 0.05, conf = 0.95)
+
+# Example with known Beta parameters
+sample_size_beta(alpha = 2, beta = 5, epsilon = 0.05, conf = 0.95, N = 500)
+```
+
+## 9. Finite Population Correction
+`finite_population_correction()` adjusts an initial sample size n0 (calculated assuming an infinite population) to account for a finite population size N.
+
+```{r finite_exemple, echo=TRUE, warning=FALSE, message=FALSE}
+
+n0 <- 50   # sample size from relative/absolute precision
+N  <- 200  # total population size
+
+finite_population_correction(n0, N)
+```
+
+## 10. Summary of Functions
+
+```{r summary_table, echo=FALSE, warning=FALSE, message=FALSE}
+# Create the table
+functions_summary <- data.frame(
+  Function = c(
+    "plot_distributionsD()",
+    "plot_distributionsC()",
+    "relative_sample()",
+    "relative_sample_zip()",
+    "absolute_sample()",
+    "bootstrap_precision()",
+    "sample_size_binomial()",
+    "sample_size_beta()",
+    "finite_population_correction()"
+  ),
+  Purpose = c(
+    "Visualize discrete count data with Poisson, NB, ZIP, Normal and Student-t fits",
+    "Visualize continuous data with Student-t, Normal, Gamma, Lognormal fits",
+    "Compute sample size for relative precision (discrete or continuous)",
+    "Compute sample size for relative precision including ZIP distribution",
+    "Compute sample size for absolute precision (discrete or continuous)",
+    "Estimate precision using bootstrap sampling and confidence intervals",
+    "Compute sample size for absolute precision for binomial data",
+    "Compute sample size for absolute precision for percentage data (beta)",
+    "Adjust sample size for finite populations (finite population correction)"
+  ),
+  Data_Type = c(
+    "Discrete",
+    "Continuous",
+    "Both",
+    "Discrete",
+    "Both",
+    "Both",
+    "Presence/absence (1/0)",
+    "Percentage",
+    "Discrete"
+  )
+)
+
+library(knitr)
+knitr::kable(functions_summary, caption = "Summary of SamplEffCalc Functions")
+```
+
+### References
+		• Elliot, J.M. (1977) Some Methods for the Statistical Analysis of Samples of Benthic Invertebrates. 2nd Edition, Freshwater Biological Publ. 25, Freshwater Biological Association, Ambleside, 160 p.	
+		•	Thompsom, S.K. (2012). Sampling (Wiley series in probability and statistics, 755) 3rd edition.
+		• Venables, W.N. & Ripley, B.D. (2002). Modern Applied Statistics with S. 4th edition.
+	  •	R packages: MASS, fitdistrplus, pscl, ggplot2.
+
+## Notes for Users
+
+These are important guidelines for effectively using the **`SamplEffCalc`** package functions:
+
+1. **Error scale consistency**  
+   - Always ensure your `epsilon` (absolute or relative error) is in the same scale as your data.  
+   - For counts or measurements: use the same units as your data.  
+   - For proportions (0–1 or percentages): ensure consistency between `p` and `epsilon`.
+
+2. **Finite population adjustment**  
+   - For small populations (finite populations), provide population size parameter `N` in the functions: `relative_sample()`, `relative_sample_zip()` `absolute_sample()`,  `sample_size_binomial()` and  `sample_size_beta()`. If `N` is not provided an infinite population will be assumed. 
+   - This avoids oversampling when the population size `N` is limited.
+   `finite_population_correction()` function can perform the same adjustment after analysis if `N` was not provided initially.
+   
+3. **Bootstrap-based precision**  
+   - Use `bootstrap_precision()` when parametric assumptions (Normal, Poisson, etc.) are uncertain.  
+   - This function estimates precision non-parametrically using resampling, and helps visualize how precision improves with increasing sample size. It works both for relative or absolute precision and both infinite or finite populations. If working with finite populations the population size (N_pop) should be provided.
+
+4. **Binomial data sampling**  
+   - `sample_size_binomial()` allows automatic estimation of the proportion `p` from observed 0/1 data.  
+   - You can also provide a known expected proportion `p`.  
+   - If the entire population is known, supply `N` to apply finite population correction automatically.
+
+5. **A typical workflow recommendation**  
+
+   (1) Compute an initial sample size using `relative_sample()`, `absolute_sample()`, or `sample_size_binomial()`.
+   (2) Adjust for finite population using `finite_population_correction()`.  
+   (3) Optionally, check precision with `bootstrap_precision()`.
+
+6. **Visualization**  
+   - Always visualize your data with `plot_distributionsD()` or `plot_distributionsC()` before performing sample size calculations.  
+   - This helps ensure that distributional assumptions match your data.
+
