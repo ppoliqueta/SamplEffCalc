@@ -23,7 +23,7 @@ knitr::opts_chunk$set(
 This page provides quick access to all main vignettes in the **SamplEffCalc** package:
 
 - [Introduction to SamplEffCalc](GettingStarted.html)
-- [PrecisionCalc User Manual](Manual.html)
+- [SamplEffCalc User Manual](Manual.html)
 
 
 Click any link to view the corresponding vignette.
