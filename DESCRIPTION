@@ -16,7 +16,7 @@ Suggests: knitr, rmarkdown, testthat (>= 3.0.0)
 Depends: R (>= 3.5)
 Imports: stats, graphics, ggplot2, pscl, gridExtra, MASS, fitdistrplus
 NeedsCompilation: no
-Packaged: 2025-10-25 23:55:14 UTC; pcpaiva
+Packaged: 2025-11-12 15:45:28 UTC; pcpaiva
 Author: Paulo Paiva [aut, cre]
 Maintainer: Paulo Paiva <paulo.paiva@gmail.com>
 Config/testthat/edition: 3
