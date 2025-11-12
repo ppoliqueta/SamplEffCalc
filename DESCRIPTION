@@ -1,5 +1,5 @@
 Package: SamplEffCalc
-Title: SamplEffCalc: Sample effort calculation for a given precision
+Title: Sample effort calculation for a given precision
 Version: 0.1.0
 Authors@R: 
     person("Paulo", "Paiva", , "paulo.paiva@gmail.com", role = c("aut", "cre"))
